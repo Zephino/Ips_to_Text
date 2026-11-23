@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IPS to Text Converter</title>
+<meta name="description" content="Convert .ips ROM patches and Apple crash reports into readable text. Runs entirely in your browser.">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<style>
+  :root {
+    --bg: #111418; --panel: #1a1f26; --line: #2a313b; --text: #e6e9ee;
+    --muted: #9aa4b2; --accent: #5ab0ff; --ok: #5fd38d; --warn: #ffb84d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  main { max-width: 900px; margin: 0 auto; padding: 32px 20px 60px; }
+  h1 { margin: 0 0 4px; font-size: 26px; }
+  .sub { color: var(--muted); margin: 0 0 24px; }
+  #drop {
+    border: 2px dashed var(--line); border-radius: 12px; padding: 40px 20px;
+    text-align: center; background: var(--panel); cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  #drop.over { border-color: var(--accent); background: #1d2631; }
+  #drop strong { font-size: 18px; display: block; margin-bottom: 6px; }
+  #drop span { color: var(--muted); }
+  input[type=file] { display: none; }
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0; }
+  button {
+    background: var(--accent); color: #0b1220; border: 0; border-radius: 8px;
+    padding: 8px 14px; font-weight: 600; cursor: pointer; font-size: 14px;
+  }
+  button.secondary { background: var(--line); color: var(--text); }
+  button:disabled { opacity: .4; cursor: default; }
+  .file {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    margin-top: 14px; overflow: hidden;
+  }
+  .file header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap;
+  }
+  .file .name { font-weight: 600; word-break: break-all; }
+  .tag { font-size: 12px; padding: 2px 8px; border-radius: 99px; margin-left: 8px; }
+  .tag.patch { background: #1f3a2a; color: var(--ok); }
+  .tag.report { background: #3a2f1a; color: var(--warn); }
+  .tag.unknown { background: var(--line); color: var(--muted); }
+  pre {
+    margin: 0; padding: 12px 14px; max-height: 360px; overflow: auto;
+    font: 12.5px/1.45 ui-monospace, Consolas, Menlo, monospace; white-space: pre;
+  }
+  .note { color: var(--muted); font-size: 13px; margin-top: 28px; }
+  footer { color: var(--muted); font-size: 12px; margin-top: 30px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>IPS to Text Converter</h1>
+  <p class="sub">Turn <code>.ips</code> ROM patches or Apple crash reports into readable <code>.txt</code> files. Everything runs in your browser. Your files are never uploaded.</p>
+
+  <label id="drop" for="picker">
+    <strong>Drop .ips files here</strong>
+    <span>or click to choose files (you can pick more than one)</span>
+  </label>
+  <input id="picker" type="file" accept=".ips" multiple>
+
+  <div class="controls">
+    <button id="dlAll" disabled>Download all .txt</button>
+    <button id="clear" class="secondary" disabled>Clear</button>
+  </div>
+
+  <div id="results"></div>
+
+  <p class="note">
+    <strong>ROM patches</strong> show every record: the ROM offset, the size, and the bytes written (hex + ASCII). RLE records show the fill value and count.
+    <strong>Apple crash reports</strong> are pretty-printed as JSON.
+    Tip: you can paste the output into a local AI (LM Studio, etc.) and ask it to explain the changes.
+  </p>
+  <footer>IPS to Text Converter v<span id="ver"></span></footer>
+</main>
+
+<script>
+"use strict";
+const VERSION = "1.0.0";
+document.getElementById("ver").textContent = VERSION;
+
+/* ---------- conversion logic (same output as ips_to_text.py) ---------- */
+function hex2(b) { return b.toString(16).toUpperCase().padStart(2, "0"); }
+function hex6(n) { return n.toString(16).toUpperCase().padStart(6, "0"); }
+
+function hexdump(data, base, width = 16) {
+  const lines = [];
+  for (let i = 0; i < data.length; i += width) {
+    const chunk = data.subarray(i, i + width);
+    const hx = Array.from(chunk, hex2).join(" ");
+    const asc = Array.from(chunk, b => (b >= 32 && b < 127) ? String.fromCharCode(b) : ".").join("");
+    lines.push(`    ${hex6(base + i)}: ${hx.padEnd(width * 3)} ${asc}`);
+  }
+  return lines;
+}
+
+function be(raw, pos, len) {
+  let v = 0;
+  for (let i = 0; i < len; i++) v = v * 256 + raw[pos + i];
+  return v;
+}
+
+function dumpPatch(raw) {
+  const out = ["IPS ROM PATCH", "=".repeat(60)];
+  let pos = 5, n = 0, total = 0;
+  while (pos + 3 <= raw.length) {
+    if (raw[pos] === 0x45 && raw[pos + 1] === 0x4F && raw[pos + 2] === 0x46) { // "EOF"
+      pos += 3;
+      out.push("", "EOF marker reached.");
+      if (pos + 3 <= raw.length) {
+        const t = be(raw, pos, 3);
+        out.push(`Truncate ROM to size: 0x${hex6(t)} (${t} bytes)`);
+      }
+      break;
+    }
+    if (pos + 5 > raw.length) { out.push("WARNING: file ended in the middle of a record."); break; }
+    const offset = be(raw, pos, 3);
+    const size = be(raw, pos + 3, 2);
+    pos += 5; n++;
+    out.push("");
+    if (size === 0) {
+      if (pos + 3 > raw.length) { out.push("WARNING: truncated RLE record."); break; }
+      const count = be(raw, pos, 2);
+      const value = raw[pos + 2];
+      pos += 3; total += count;
+      out.push(`Record ${n}: RLE  offset 0x${hex6(offset)}  fill ${count} bytes with 0x${hex2(value)}`);
+    } else {
+      const data = raw.subarray(pos, pos + size);
+      pos += size; total += data.length;
+      out.push(`Record ${n}: DATA offset 0x${hex6(offset)}  size ${size} bytes`);
+      out.push(...hexdump(data, offset));
+    }
+  }
+  out.splice(2, 0, `Records: ${n}   Bytes changed: ${total}`);
+  return out.join("\n") + "\n";
+}
+
+function dumpText(raw) {
+  const text = new TextDecoder("utf-8", { fatal: false }).decode(raw);
+  const nl = text.indexOf("\n");
+  const parts = nl === -1 ? [text] : [text.slice(0, nl), text.slice(nl + 1)];
+  return parts.map(p => {
+    try { return JSON.stringify(JSON.parse(p), null, 2); } catch { return p; }
+  }).join("\n\n");
+}
+
+function convert(raw) {
+  const isPatch = raw.length >= 5 &&
+    String.fromCharCode(...raw.subarray(0, 5)) === "PATCH";
+  if (isPatch) return { kind: "patch", text: dumpPatch(raw) };
+  const looksText = raw.length > 0 && (raw[0] === 0x7B || raw[0] === 0xEF); // "{" or BOM
+  return { kind: looksText ? "report" : "unknown", text: dumpText(raw) };
+}
+/* ---------- end conversion logic ---------- */
+
+const results = document.getElementById("results");
+const dlAll = document.getElementById("dlAll");
+const clearBtn = document.getElementById("clear");
+const drop = document.getElementById("drop");
+const picker = document.getElementById("picker");
+let outputs = [];
+
+function download(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+  const a = document.createElement("a");
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function refreshButtons() {
+  dlAll.disabled = clearBtn.disabled = outputs.length === 0;
+}
+
+async function handleFiles(files) {
+  for (const file of files) {
+    const raw = new Uint8Array(await file.arrayBuffer());
+    const { kind, text } = convert(raw);
+    const outName = file.name + ".txt";
+    outputs.push({ name: outName, text });
+
+    const box = document.createElement("div");
+    box.className = "file";
+    const header = document.createElement("header");
+    const left = document.createElement("div");
+    const nm = document.createElement("span");
+    nm.className = "name"; nm.textContent = file.name;           // textContent: no HTML injection
+    const tag = document.createElement("span");
+    tag.className = "tag " + kind;
+    tag.textContent = kind === "patch" ? "ROM patch" : kind === "report" ? "Crash report" : "Unknown / text";
+    left.append(nm, tag);
+    const btn = document.createElement("button");
+    btn.textContent = "Download .txt";
+    btn.onclick = () => download(outName, text);
+    header.append(left, btn);
+    const pre = document.createElement("pre");
+    pre.textContent = text.length > 200000 ? text.slice(0, 200000) + "\n... (preview cut off; download for full text)" : text;
+    box.append(header, pre);
+    results.appendChild(box);
+  }
+  refreshButtons();
+}
+
+picker.addEventListener("change", e => { handleFiles(e.target.files); picker.value = ""; });
+["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => handleFiles(e.dataTransfer.files));
+window.addEventListener("dragover", e => e.preventDefault());
+window.addEventListener("drop", e => e.preventDefault());
+
+dlAll.onclick = () => outputs.forEach((o, i) => setTimeout(() => download(o.name, o.text), i * 300));
+clearBtn.onclick = () => { outputs = []; results.innerHTML = ""; refreshButtons(); };
+</script>
+</body>
+</html>
