@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.0] - 2026-11-23
+### Added
+- ROM files: header info for NES, SNES, Game Boy / Color, GBA, N64, Genesis, Master System / Game Gear.
+- CRC32, SHA-1 and SHA-256 hashes for every ROM, plus header-less hashes for NES and copier-headered SNES.
+- Readable ASCII text from ROMs, and an optional full hex dump (ROMs up to 8 MB).
+- Options checkboxes for ROM text and hex dump.
+### Changed
+- Renamed the page to "IPS & ROM to Text Converter".
+
 ## [1.2.0] - 2026-11-23
 ### Added
 - Phone-friendly layout: larger tap targets, stacked buttons, "Tap to choose" wording on touch screens.

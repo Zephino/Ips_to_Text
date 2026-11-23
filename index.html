@@ -4,8 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#111418">
-<title>IPS to Text Converter</title>
-<meta name="description" content="Convert .ips ROM patches and Apple crash reports into readable text. Runs entirely in your browser.">
+<title>IPS &amp; ROM to Text Converter</title>
+<meta name="description" content="Convert .ips ROM patches, game ROMs and Apple crash reports into readable text. Runs entirely in your browser.">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src https://countapi.mileshilliard.com; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
 <style>
   :root {
@@ -74,6 +74,10 @@
   #drop strong { font-size: 18px; }
   #drop .hint { color: var(--muted); font-size: 14px; }
   input[type=file] { display: none; }
+  .opts { display: flex; gap: 18px; flex-wrap: wrap; margin: 14px 2px 0; color: var(--muted); font-size: 13.5px; }
+  .opts label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; min-height: 32px; }
+  .opts input { width: 18px; height: 18px; accent-color: var(--accent); margin: 0; }
+  .opts small { color: #6f7b8b; }
 
   /* buttons */
   button {
@@ -106,6 +110,7 @@
   .tag { font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 99px; margin-left: 8px; white-space: nowrap; }
   .tag.patch { background: rgba(95,211,141,.12); color: var(--ok); }
   .tag.report { background: rgba(255,184,77,.12); color: var(--warn); }
+  .tag.rom { background: rgba(167,139,250,.14); color: var(--accent2); }
   .tag.unknown { background: var(--line); color: var(--muted); }
   .actions { display: flex; gap: 8px; }
   pre {
@@ -115,7 +120,7 @@
   }
 
   /* info + footer */
-  .info { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 30px; }
+  .info { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-top: 30px; }
   .info div {
     background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
     padding: 14px; font-size: 13px; color: var(--muted);
@@ -160,8 +165,8 @@
 <body>
 <main>
   <div class="badge">&#9679; Runs 100% in your browser</div>
-  <h1>IPS to Text Converter</h1>
-  <p class="sub">Turn <code>.ips</code> ROM patches and Apple crash reports into readable <code>.txt</code> files. Your files are never uploaded.</p>
+  <h1>IPS &amp; ROM to Text Converter</h1>
+  <p class="sub">Turn <code>.ips</code> patches, game ROMs and Apple crash reports into readable <code>.txt</code> files. Your files are never uploaded.</p>
 
   <div class="stats">
     <div class="stat">
@@ -176,10 +181,15 @@
 
   <label id="drop" for="picker">
     <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></svg></div>
-    <strong><span class="mouse-only">Drop .ips files here</span><span class="touch-only">Tap to choose .ips files</span></strong>
+    <strong><span class="mouse-only">Drop .ips or ROM files here</span><span class="touch-only">Tap to choose .ips or ROM files</span></strong>
     <span class="hint"><span class="mouse-only">or click to browse &middot; </span>you can pick more than one</span>
   </label>
   <input id="picker" type="file" multiple>
+
+  <div class="opts">
+    <label><input type="checkbox" id="optStrings" checked> ROMs: include readable text</label>
+    <label><input type="checkbox" id="optHex"> ROMs: include full hex dump <small>(big files)</small></label>
+  </div>
 
   <div class="controls" hidden>
     <button id="dlAll" disabled>Download all .txt</button>
@@ -189,20 +199,21 @@
   <div id="results"></div>
 
   <section class="info">
-    <div><b>ROM patches</b>Every record: ROM offset, size, and bytes written (hex + ASCII). RLE fills included.</div>
+    <div><b>IPS patches</b>Every record: ROM offset, size, and bytes written (hex + ASCII). RLE fills included.</div>
+    <div><b>Game ROMs</b>NES, SNES, Game Boy / Color, GBA, N64, Genesis, Master System / Game Gear: header info, CRC32 / SHA-1 hashes, and readable text.</div>
     <div><b>Crash reports</b>Apple <code>.ips</code> crash logs, pretty-printed so they're easy to read.</div>
     <div><b>Ask an AI</b>Tap <strong>Copy text</strong> and paste into ChatGPT, Claude or LM Studio to explain the changes.</div>
   </section>
 
   <footer>
-    <span>IPS to Text Converter v<span id="ver"></span></span>
+    <span>IPS &amp; ROM to Text Converter v<span id="ver"></span></span>
     <a href="https://github.com/Zephino/Ips_to_Text" target="_blank" rel="noopener">View on GitHub</a>
   </footer>
 </main>
 
 <script>
 "use strict";
-const VERSION = "1.2.0";
+const VERSION = "1.3.0";
 
 /* ---------- usage counter ----------
    Only an anonymous +1 is sent. File names and contents are never sent. */
@@ -291,10 +302,355 @@ function dumpText(raw) {
   }).join("\n\n");
 }
 
-function convert(raw) {
+/* ---------- ROM info ---------- */
+const ROM_EXTS = ["nes","fds","unf","sfc","smc","swc","fig","gb","gbc","sgb","gba","agb","n64","z64","v64",
+  "md","gen","smd","bin","32x","sms","gg","sg","pce","nds","a26","a78","lnx","ws","wsc","ngp","ngc","vb","rom"];
+const HEXDUMP_LIMIT = 8 * 1024 * 1024;   // hex dump only for ROMs up to 8 MB
+const STRINGS_LIMIT = 5000;
+
+const u16le = (r, o) => r[o] | (r[o + 1] << 8);
+const u16be = (r, o) => (r[o] << 8) | r[o + 1];
+const u32be = (r, o) => ((r[o] << 24) >>> 0) + (r[o + 1] << 16) + (r[o + 2] << 8) + r[o + 3];
+const hx = (n, w) => "0x" + n.toString(16).toUpperCase().padStart(w, "0");
+function ascii(r, o, len) {
+  let s = "";
+  for (let i = o; i < o + len && i < r.length; i++) {
+    const b = r[i];
+    if (b === 0) break;
+    s += (b >= 32 && b < 127) ? String.fromCharCode(b) : "?";
+  }
+  return s.trim();
+}
+function sizeStr(n) {
+  if (n >= 1048576 && n % 1048576 === 0) return `${n / 1048576} MB`;
+  if (n >= 1024 && n % 1024 === 0) return `${n / 1024} KB`;
+  if (n >= 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${n} bytes`;
+}
+function isPrintable(r, o, len) {
+  for (let i = o; i < o + len; i++) {
+    const b = r[i];
+    if (b === undefined) return false;
+    if (b !== 0 && (b < 32 || b > 126)) return false;
+  }
+  return true;
+}
+
+/* CRC32 */
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = (c & 1) ? (0xEDB88320 ^ (c >>> 1)) : (c >>> 1);
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(r) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < r.length; i++) c = CRC_TABLE[(c ^ r[i]) & 0xFF] ^ (c >>> 8);
+  return ((c ^ 0xFFFFFFFF) >>> 0).toString(16).toUpperCase().padStart(8, "0");
+}
+async function digest(algo, r) {
+  try {
+    const buf = await crypto.subtle.digest(algo, r);
+    return Array.from(new Uint8Array(buf), b => b.toString(16).padStart(2, "0")).join("").toUpperCase();
+  } catch { return "(not available in this browser)"; }
+}
+async function hashLines(r, label) {
+  const out = [];
+  if (label) out.push(label);
+  out.push(`  CRC32:   ${crc32(r)}`);
+  out.push(`  SHA-1:   ${await digest("SHA-1", r)}`);
+  out.push(`  SHA-256: ${await digest("SHA-256", r)}`);
+  return out;
+}
+
+/* --- NES --- */
+const NES_MAPPERS = {0:"NROM",1:"MMC1 (SxROM)",2:"UxROM",3:"CNROM",4:"MMC3 (TxROM)",5:"MMC5",7:"AxROM",
+  9:"MMC2",10:"MMC4",11:"Color Dreams",13:"CPROM",16:"Bandai FCG",18:"Jaleco SS88006",19:"Namco 163",
+  21:"VRC4a/c",22:"VRC2a",23:"VRC2b/VRC4e",24:"VRC6a",25:"VRC4b/d",26:"VRC6b",34:"BNROM/NINA-001",
+  66:"GxROM",69:"Sunsoft FME-7",71:"Camerica",85:"VRC7",206:"Namco 118"};
+function nesInfo(r) {
+  const f6 = r[6], f7 = r[7];
+  const nes2 = (f7 & 0x0C) === 0x08;
+  let mapper = (f6 >> 4) | (f7 & 0xF0);
+  let prg = r[4], chr = r[5], sub = null;
+  if (nes2) {
+    mapper |= (r[8] & 0x0F) << 8;
+    sub = r[8] >> 4;
+    if ((r[9] & 0x0F) !== 0x0F) prg |= (r[9] & 0x0F) << 8;
+    if ((r[9] >> 4) !== 0x0F) chr |= (r[9] >> 4) << 8;
+  }
+  const trainer = !!(f6 & 4);
+  const lines = [
+    `  Format:      ${nes2 ? "NES 2.0" : "iNES"}`,
+    `  Mapper:      ${mapper}${NES_MAPPERS[mapper] ? " - " + NES_MAPPERS[mapper] : ""}${sub ? " (submapper " + sub + ")" : ""}`,
+    `  PRG ROM:     ${sizeStr(prg * 16384)}`,
+    `  CHR ROM:     ${chr ? sizeStr(chr * 8192) : "none (uses CHR RAM)"}`,
+    `  Mirroring:   ${(f6 & 8) ? "Four-screen" : (f6 & 1) ? "Vertical" : "Horizontal"}`,
+    `  Battery:     ${(f6 & 2) ? "yes (saves)" : "no"}`,
+    `  Trainer:     ${trainer ? "yes (512 bytes)" : "no"}`,
+    `  Console:     ${["NES / Famicom", "Vs. System", "PlayChoice-10", "Extended"][f7 & 3]}`,
+  ];
+  return { platform: "NES / Famicom", lines, headerSkip: 16, headerNote: "Without 16-byte iNES header (matches No-Intro):" };
+}
+
+/* --- SNES --- */
+const SNES_REGIONS = ["Japan","USA / Canada","Europe","Sweden","Finland","Denmark","France","Netherlands",
+  "Spain","Germany","Italy","China","Indonesia","Korea","International","Canada","Brazil","Australia"];
+const SNES_MAPS = {0:"LoROM",1:"HiROM",2:"LoROM + S-DD1",3:"LoROM + SA-1",5:"ExHiROM",10:"HiROM + SPC7110"};
+const SNES_CHIPS = ["DSP","Super FX","OBC1","SA-1","S-DD1","S-RTC"];
+function snesScore(r, o) {
+  if (o + 0x20 > r.length) return -1;
+  let s = 0;
+  if (((u16le(r, o + 0x1C) + u16le(r, o + 0x1E)) & 0xFFFF) === 0xFFFF) s += 4;
+  const map = r[o + 0x15] & 0xEF;
+  if ([0x20,0x21,0x22,0x23,0x25,0x2A].includes(map)) s += 2;
+  if (isPrintable(r, o, 21)) s += 2;
+  if (r[o + 0x17] >= 0x08 && r[o + 0x17] <= 0x0D) s += 1;
+  if (r[o + 0x19] <= 0x14) s += 1;
+  return s;
+}
+function snesInfo(r, forced) {
+  const copier = (r.length % 1024 === 512) ? 512 : 0;
+  let best = null, bestScore = -1;
+  for (const base of [0x7FC0, 0xFFC0, 0x40FFC0]) {
+    const sc = snesScore(r, base + copier);
+    if (sc > bestScore) { bestScore = sc; best = base + copier; }
+  }
+  if (bestScore < (forced ? 3 : 7)) return null;
+  const o = best;
+  const map = r[o + 0x15], type = r[o + 0x16];
+  const romKB = r[o + 0x17] ? (1 << r[o + 0x17]) : 0;
+  const ramKB = r[o + 0x18] ? (1 << r[o + 0x18]) : 0;
+  const chk = u16le(r, o + 0x1E), cmp = u16le(r, o + 0x1C);
+  let chipText;
+  if ((type & 0x0F) <= 2) chipText = ["ROM only", "ROM + RAM", "ROM + RAM + battery"][type & 0x0F];
+  else chipText = `${SNES_CHIPS[type >> 4] || "custom coprocessor"} (${hx(type, 2)})`;
+  const lines = [
+    `  Title:       ${ascii(r, o, 21)}`,
+    `  Layout:      ${SNES_MAPS[map & 0x0F] || "unknown"}, ${(map & 0x10) ? "FastROM" : "SlowROM"} (${hx(map, 2)})`,
+    `  Header at:   ${hx(o, 6)}${copier ? " (file has a 512-byte copier header)" : ""}`,
+    `  Cartridge:   ${chipText}`,
+    `  ROM size:    ${romKB ? sizeStr(romKB * 1024) : "unknown"} (file is ${sizeStr(r.length - copier)})`,
+    `  Save RAM:    ${ramKB ? sizeStr(ramKB * 1024) : "none"}`,
+    `  Region:      ${SNES_REGIONS[r[o + 0x19]] || "unknown"} (${hx(r[o + 0x19], 2)})`,
+    `  Developer:   ${hx(r[o + 0x1A], 2)}`,
+    `  Version:     1.${r[o + 0x1B]}`,
+    `  Checksum:    ${hx(chk, 4)} (complement ${hx(cmp, 4)}, ${((chk + cmp) & 0xFFFF) === 0xFFFF ? "pair OK" : "pair does NOT match"})`,
+  ];
+  return { platform: "Super Nintendo / Super Famicom", lines,
+    headerSkip: copier, headerNote: copier ? "Without 512-byte copier header (matches No-Intro):" : null };
+}
+
+/* --- Game Boy / Color --- */
+const GB_CARTS = {0x00:"ROM only",0x01:"MBC1",0x02:"MBC1 + RAM",0x03:"MBC1 + RAM + battery",0x05:"MBC2",
+  0x06:"MBC2 + battery",0x08:"ROM + RAM",0x09:"ROM + RAM + battery",0x0B:"MMM01",0x0F:"MBC3 + timer + battery",
+  0x10:"MBC3 + timer + RAM + battery",0x11:"MBC3",0x12:"MBC3 + RAM",0x13:"MBC3 + RAM + battery",0x19:"MBC5",
+  0x1A:"MBC5 + RAM",0x1B:"MBC5 + RAM + battery",0x1C:"MBC5 + rumble",0x1D:"MBC5 + rumble + RAM",
+  0x1E:"MBC5 + rumble + RAM + battery",0x20:"MBC6",0x22:"MBC7 + sensor + rumble + RAM + battery",
+  0xFC:"Pocket Camera",0xFD:"Bandai TAMA5",0xFE:"HuC3",0xFF:"HuC1 + RAM + battery"};
+const GB_RAM = {0:"none",1:"2 KB",2:"8 KB",3:"32 KB",4:"128 KB",5:"64 KB"};
+function gbInfo(r) {
+  const cgb = r[0x143];
+  let x = 0;
+  for (let i = 0x134; i <= 0x14C; i++) x = (x - r[i] - 1) & 0xFF;
+  const lic = r[0x14B] === 0x33 ? `new code "${ascii(r, 0x144, 2)}"` : hx(r[0x14B], 2);
+  const lines = [
+    `  Title:       ${ascii(r, 0x134, (cgb & 0x80) ? 15 : 16)}`,
+    `  System:      ${cgb === 0xC0 ? "Game Boy Color only" : cgb === 0x80 ? "Game Boy Color (also works on Game Boy)" : "Game Boy"}`,
+    `  Super GB:    ${r[0x146] === 0x03 ? "yes" : "no"}`,
+    `  Cartridge:   ${GB_CARTS[r[0x147]] || "unknown"} (${hx(r[0x147], 2)})`,
+    `  ROM size:    ${r[0x148] <= 8 ? sizeStr(32768 << r[0x148]) : "unknown"} (${hx(r[0x148], 2)})`,
+    `  Save RAM:    ${GB_RAM[r[0x149]] || "unknown"}`,
+    `  Region:      ${r[0x14A] === 0 ? "Japan" : "Overseas"}`,
+    `  Licensee:    ${lic}`,
+    `  Version:     ${r[0x14C]}`,
+    `  Header chk:  ${hx(r[0x14D], 2)} (${x === r[0x14D] ? "OK" : "BAD, calculated " + hx(x, 2)})`,
+    `  Global chk:  ${hx(u16be(r, 0x14E), 4)}`,
+  ];
+  return { platform: (cgb & 0x80) ? "Game Boy Color" : "Game Boy", lines };
+}
+
+/* --- Game Boy Advance --- */
+const REGION_LETTER = {J:"Japan",E:"USA",P:"Europe",D:"Germany",F:"France",I:"Italy",S:"Spain",
+  K:"Korea",C:"China",U:"Australia",A:"Asia / all",X:"Europe",Y:"Europe",H:"Netherlands",N:"Canada"};
+function findAscii(r, needle) {
+  const n = Array.from(needle, c => c.charCodeAt(0));
+  outer: for (let i = 0; i <= r.length - n.length; i++) {
+    for (let j = 0; j < n.length; j++) if (r[i + j] !== n[j]) continue outer;
+    return i;
+  }
+  return -1;
+}
+function gbaInfo(r) {
+  let c = 0;
+  for (let i = 0xA0; i <= 0xBC; i++) c = (c - r[i]) & 0xFF;
+  c = (c - 0x19) & 0xFF;
+  const code = ascii(r, 0xAC, 4);
+  let save = "none found";
+  for (const s of ["EEPROM_V", "SRAM_F_V", "SRAM_V", "FLASH1M_V", "FLASH512_V", "FLASH_V"]) {
+    const at = findAscii(r, s);
+    if (at >= 0) { save = ascii(r, at, 16).split(" ")[0]; break; }
+  }
+  const lines = [
+    `  Title:       ${ascii(r, 0xA0, 12)}`,
+    `  Game code:   ${code}${REGION_LETTER[code[3]] ? " (" + REGION_LETTER[code[3]] + ")" : ""}`,
+    `  Maker:       ${ascii(r, 0xB0, 2)}`,
+    `  Version:     ${r[0xBC]}`,
+    `  Save type:   ${save}`,
+    `  Header chk:  ${hx(r[0xBD], 2)} (${c === r[0xBD] ? "OK" : "BAD, calculated " + hx(c, 2)})`,
+  ];
+  return { platform: "Game Boy Advance", lines };
+}
+
+/* --- Nintendo 64 --- */
+function n64Info(r) {
+  const m = u32be(r, 0);
+  let order, data = r;
+  if (m === 0x80371240) order = "Big-endian (.z64)";
+  else if (m === 0x37804012) {
+    order = "Byte-swapped (.v64)";
+    data = new Uint8Array(r.length);
+    for (let i = 0; i + 1 < r.length; i += 2) { data[i] = r[i + 1]; data[i + 1] = r[i]; }
+  } else {
+    order = "Little-endian (.n64)";
+    data = new Uint8Array(r.length);
+    for (let i = 0; i + 3 < r.length; i += 4) {
+      data[i] = r[i + 3]; data[i + 1] = r[i + 2]; data[i + 2] = r[i + 1]; data[i + 3] = r[i];
+    }
+  }
+  const lines = [
+    `  Title:       ${ascii(data, 0x20, 20)}`,
+    `  Game code:   ${ascii(data, 0x3B, 4)}`,
+    `  Region:      ${REGION_LETTER[String.fromCharCode(data[0x3E])] || "unknown"} (${ascii(data, 0x3E, 1)})`,
+    `  Version:     1.${data[0x3F]}`,
+    `  Byte order:  ${order}`,
+    `  CRC1 / CRC2: ${hx(u32be(data, 0x10), 8)} / ${hx(u32be(data, 0x14), 8)}`,
+  ];
+  return { platform: "Nintendo 64", lines, normalized: data !== r ? data : null };
+}
+
+/* --- Sega Genesis / Mega Drive --- */
+function genesisInfo(r) {
+  let sum = 0;
+  for (let i = 0x200; i + 1 < r.length; i += 2) sum = (sum + u16be(r, i)) & 0xFFFF;
+  const chk = u16be(r, 0x18E);
+  const lines = [
+    `  System:      ${ascii(r, 0x100, 16)}`,
+    `  Copyright:   ${ascii(r, 0x110, 16)}`,
+    `  Title (JP):  ${ascii(r, 0x120, 48).replace(/\s+/g, " ")}`,
+    `  Title (US):  ${ascii(r, 0x150, 48).replace(/\s+/g, " ")}`,
+    `  Serial:      ${ascii(r, 0x180, 14)}`,
+    `  Devices:     ${ascii(r, 0x190, 16)}`,
+    `  ROM range:   ${hx(u32be(r, 0x1A0), 6)} - ${hx(u32be(r, 0x1A4), 6)}`,
+    `  Region:      ${ascii(r, 0x1F0, 3)}`,
+    `  Checksum:    ${hx(chk, 4)} (${chk === sum ? "OK" : "calculated " + hx(sum, 4)})`,
+  ];
+  return { platform: "Sega Genesis / Mega Drive", lines };
+}
+
+/* --- Sega Master System / Game Gear --- */
+function smsInfo(r, o) {
+  const reg = r[o + 0xF] >> 4;
+  const regions = {3:"Master System, Japan",4:"Master System, export",5:"Game Gear, Japan",6:"Game Gear, export",7:"Game Gear, international"};
+  const code = (r[o + 0xC] | (r[o + 0xD] << 8)) + ((r[o + 0xE] >> 4) * 100000);
+  const lines = [
+    `  Header at:   ${hx(o, 4)}`,
+    `  Product:     ${code.toString(16).toUpperCase()}`,
+    `  Version:     ${r[o + 0xE] & 0x0F}`,
+    `  Region:      ${regions[reg] || "unknown"} (${reg})`,
+    `  Checksum:    ${hx(u16le(r, o + 0xA), 4)}`,
+  ];
+  return { platform: (reg >= 5 && reg <= 7) ? "Sega Game Gear" : "Sega Master System", lines };
+}
+
+function detectRom(r, ext) {
+  const tag = String.fromCharCode(...r.subarray(0, 4));
+  if (tag === "NES\x1A") return nesInfo(r);
+  if (tag === "FDS\x1A" || ascii(r, 1, 14) === "*NINTENDO-HVC*")
+    return { platform: "Famicom Disk System", lines: ["  (Disk image. Header details not decoded.)"] };
+  if (r.length >= 0x40) {
+    const m = u32be(r, 0);
+    if (m === 0x80371240 || m === 0x37804012 || m === 0x40123780) return n64Info(r);
+  }
+  if (r.length >= 0xC0 && r[0xB2] === 0x96 && (ext === "gba" || ext === "agb" || isPrintable(r, 0xA0, 12)))
+    return gbaInfo(r);
+  if (r.length >= 0x150 && r[0x104] === 0xCE && r[0x105] === 0xED && r[0x106] === 0x66 && r[0x107] === 0x66)
+    return gbInfo(r);
+  if (r.length >= 0x200 && ascii(r, 0x100, 4).includes("SEG")) return genesisInfo(r);
+  if (r.length % 16384 === 512 && r[8] === 0xAA && r[9] === 0xBB)
+    return { platform: "Sega Genesis (interleaved .smd)", lines: ["  (Interleaved SMD format. Convert to .bin/.md to read the header.)"], headerSkip: 512 };
+  for (const o of [0x7FF0, 0x3FF0, 0x1FF0])
+    if (r.length >= o + 16 && ascii(r, o, 8) === "TMR SEGA") return smsInfo(r, o);
+  const snes = snesInfo(r, ["sfc", "smc", "swc", "fig"].includes(ext));
+  if (snes) return snes;
+  return { platform: "Unknown (no header recognized)", lines: ["  (Showing file details, hashes and text only.)"] };
+}
+
+function extractStrings(r, minLen) {
+  const out = [];
+  let start = -1, total = 0;
+  for (let i = 0; i <= r.length; i++) {
+    const b = r[i];
+    const ok = i < r.length && b >= 32 && b < 127;
+    if (ok) { if (start < 0) start = i; continue; }
+    if (start >= 0 && i - start >= minLen) {
+      const s = String.fromCharCode(...r.subarray(start, Math.min(i, start + 200)));
+      if (/[A-Za-z]{3}/.test(s)) {           // skip runs of pure symbols/numbers
+        total++;
+        if (out.length < STRINGS_LIMIT) out.push(`  ${hx(start, 6)}  ${s}`);
+      }
+    }
+    start = -1;
+  }
+  return { out, total };
+}
+
+async function dumpRom(raw, name, opts) {
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  const info = detectRom(raw, ext);
+  const data = info.normalized || raw;
+  const out = ["ROM INFO", "=".repeat(60),
+    `  File:        ${name}`,
+    `  Size:        ${sizeStr(raw.length)} (${raw.length.toLocaleString("en-US")} bytes)`,
+    `  Platform:    ${info.platform}`,
+    "", "HEADER", "-".repeat(60), ...info.lines,
+    "", "CHECKSUMS (look these up on No-Intro / Redump to identify the exact dump)", "-".repeat(60),
+    ...(await hashLines(raw, info.headerSkip ? "Whole file:" : null))];
+  if (info.headerSkip) out.push("", ...await hashLines(raw.subarray(info.headerSkip), info.headerNote || `Without ${info.headerSkip}-byte header:`));
+
+  if (opts.strings) {
+    const { out: strs, total } = extractStrings(data, 5);
+    out.push("", `READABLE TEXT (${total} found, 5+ characters${total > STRINGS_LIMIT ? ", first " + STRINGS_LIMIT + " shown" : ""})`, "-".repeat(60));
+    out.push("  Note: many games store dialogue in their own text encoding, so most in-game text");
+    out.push("  will NOT appear here. This finds plain ASCII text only.");
+    out.push(...(strs.length ? strs : ["  (none found)"]));
+  }
+  if (opts.hexdump) {
+    out.push("", "HEX DUMP", "-".repeat(60));
+    if (data.length > HEXDUMP_LIMIT) out.push(`  (Skipped: ROM is larger than ${sizeStr(HEXDUMP_LIMIT)}.)`);
+    else for (const l of hexdump(data, 0)) out.push(l);
+  }
+  return out.join("\n") + "\n";
+}
+
+function looksBinary(raw) {
+  const n = Math.min(raw.length, 4096);
+  let bad = 0;
+  for (let i = 0; i < n; i++) { const b = raw[i]; if (b < 9 || (b > 13 && b < 32)) bad++; }
+  return n > 0 && bad / n > 0.05;
+}
+/* ---------- end ROM info ---------- */
+
+async function convert(raw, name = "", opts = { strings: true, hexdump: false }) {
   const isPatch = raw.length >= 5 &&
     String.fromCharCode(...raw.subarray(0, 5)) === "PATCH";
   if (isPatch) return { kind: "patch", text: dumpPatch(raw) };
+  const ext = (name.split(".").pop() || "").toLowerCase();
+  if ((ROM_EXTS.includes(ext) && ext !== "ips") || looksBinary(raw))
+    return { kind: "rom", text: await dumpRom(raw, name || "file", opts) };
   const looksText = raw.length > 0 && (raw[0] === 0x7B || raw[0] === 0xEF); // "{" or BOM
   return { kind: looksText ? "report" : "unknown", text: dumpText(raw) };
 }
@@ -338,11 +694,16 @@ function refreshButtons() {
   dlAll.disabled = clearBtn.disabled = outputs.length === 0;
 }
 
+function getOpts() {
+  return { strings: document.getElementById("optStrings").checked,
+           hexdump: document.getElementById("optHex").checked };
+}
+
 async function handleFiles(fileList) {
   const files = Array.from(fileList); // copy before the input is reset
   for (const file of files) {
     const raw = new Uint8Array(await file.arrayBuffer());
-    const { kind, text } = convert(raw);
+    const { kind, text } = await convert(raw, file.name, getOpts());
     const outName = file.name + ".txt";
     outputs.push({ name: outName, text });
 
@@ -355,7 +716,7 @@ async function handleFiles(fileList) {
     nm.className = "name"; nm.textContent = file.name;           // textContent: no HTML injection
     const tag = document.createElement("span");
     tag.className = "tag " + kind;
-    tag.textContent = kind === "patch" ? "ROM patch" : kind === "report" ? "Crash report" : "Unknown / text";
+    tag.textContent = { patch: "IPS patch", rom: "ROM", report: "Crash report" }[kind] || "Unknown / text";
     left.append(nm, tag);
     const actions = document.createElement("div");
     actions.className = "actions";
