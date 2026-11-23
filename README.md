@@ -71,6 +71,7 @@ python ips_to_text.py "C:\path\to\yourfile.ips"
 
 - Files are read only in your browser. Nothing is sent to any server.
 - The page loads no outside scripts, fonts, or trackers.
+- The page shows a usage counter (visits and files converted). It sends only an anonymous +1 to [CountAPI](https://countapi.mileshilliard.com), never your files.
 - See [SECURITY.md](SECURITY.md) for details.
 
 ## Project files
@@ -84,7 +85,7 @@ SECURITY.md         security notes
 
 ## Version
 
-Current version: **1.0.1**. See [CHANGELOG.md](CHANGELOG.md) for history.
+Current version: **1.1.0**. See [CHANGELOG.md](CHANGELOG.md) for history.
 
 ## Feedback
 

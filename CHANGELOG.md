@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.1.0] - 2026-11-23
+### Added
+- Usage counter on the page: total visits and total files converted (via CountAPI).
+### Security
+- Content-Security-Policy now allows connections to the counter service only.
+
 ## [1.0.1] - 2026-11-23
 ### Changed
 - Expanded README: live link, example output, AI tips, offline instructions.
