@@ -20,8 +20,8 @@ No install, no sign-up, and your files are never uploaded. Everything happens on
 ## How to use
 
 1. Open the [converter page](https://zephino.github.io/Ips_to_Text/).
-2. Drag one or more `.ips` files onto the box, or click it to choose files.
-3. Read the result on the page, or click **Download .txt**. Use **Download all .txt** when you have several files.
+2. Drag one or more `.ips` files onto the box, or click it (tap it on a phone) to choose files.
+3. Read the result on the page, click **Copy text**, or click **Download .txt**. Use **Download all .txt** when you have several files.
 
 Each output file keeps the original name with `.txt` added, e.g. `myhack.ips.txt`.
 
@@ -85,7 +85,7 @@ SECURITY.md         security notes
 
 ## Version
 
-Current version: **1.1.0**. See [CHANGELOG.md](CHANGELOG.md) for history.
+Current version: **1.2.0**. See [CHANGELOG.md](CHANGELOG.md) for history.
 
 ## Feedback
 

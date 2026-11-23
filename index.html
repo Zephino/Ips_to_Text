@@ -2,100 +2,207 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111418">
 <title>IPS to Text Converter</title>
 <meta name="description" content="Convert .ips ROM patches and Apple crash reports into readable text. Runs entirely in your browser.">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; connect-src https://countapi.mileshilliard.com; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
 <style>
   :root {
-    --bg: #111418; --panel: #1a1f26; --line: #2a313b; --text: #e6e9ee;
-    --muted: #9aa4b2; --accent: #5ab0ff; --ok: #5fd38d; --warn: #ffb84d;
+    --bg: #0d1015; --panel: #151a22; --panel2: #1a212b; --line: #262f3b;
+    --text: #e8ecf2; --muted: #94a0b0; --accent: #5ab0ff; --accent2: #a78bfa;
+    --ok: #5fd38d; --warn: #ffb84d; --radius: 14px;
   }
-  * { box-sizing: border-box; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
   body {
-    margin: 0; background: var(--bg); color: var(--text);
-    font: 15px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+    margin: 0; min-height: 100vh; color: var(--text);
+    background:
+      radial-gradient(900px 500px at 15% -10%, rgba(90,176,255,.13), transparent 60%),
+      radial-gradient(700px 450px at 100% 0%, rgba(167,139,250,.10), transparent 60%),
+      var(--bg);
+    font: 15px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   }
-  main { max-width: 900px; margin: 0 auto; padding: 32px 20px 60px; }
-  h1 { margin: 0 0 4px; font-size: 26px; }
-  .sub { color: var(--muted); margin: 0 0 24px; }
+  main {
+    max-width: 860px; margin: 0 auto;
+    padding: 44px max(20px, env(safe-area-inset-right)) 48px max(20px, env(safe-area-inset-left));
+  }
+  code { font-family: ui-monospace, Consolas, Menlo, monospace; font-size: .92em;
+         background: var(--panel2); border: 1px solid var(--line); border-radius: 5px; padding: 0 5px; }
+
+  /* header */
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600;
+    color: var(--ok); background: rgba(95,211,141,.1); border: 1px solid rgba(95,211,141,.25);
+    padding: 3px 10px; border-radius: 99px; margin-bottom: 14px;
+  }
+  h1 {
+    margin: 0 0 8px; font-size: 34px; line-height: 1.15; letter-spacing: -.02em;
+    background: linear-gradient(90deg, #fff 0%, #cfe6ff 45%, var(--accent2) 100%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .sub { color: var(--muted); margin: 0 0 22px; max-width: 640px; }
+
+  /* stats */
+  .stats { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 22px; }
+  .stat {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 10px 16px; color: var(--muted); font-size: 13px;
+  }
+  .stat svg { width: 18px; height: 18px; color: var(--accent); flex: none; }
+  .stat b { color: var(--text); font-size: 18px; font-variant-numeric: tabular-nums; }
+
+  /* drop zone */
   #drop {
-    border: 2px dashed var(--line); border-radius: 12px; padding: 40px 20px;
-    text-align: center; background: var(--panel); cursor: pointer;
-    transition: border-color .15s, background .15s;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 8px; text-align: center; cursor: pointer; padding: 44px 20px;
+    background: linear-gradient(180deg, var(--panel2), var(--panel));
+    border: 2px dashed #34404f; border-radius: var(--radius);
+    transition: border-color .15s, box-shadow .15s, transform .15s;
   }
-  #drop.over { border-color: var(--accent); background: #1d2631; }
-  #drop strong { font-size: 18px; display: block; margin-bottom: 6px; }
-  #drop span { color: var(--muted); }
+  #drop:hover, #drop.over {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 4px rgba(90,176,255,.12), 0 10px 30px rgba(0,0,0,.3);
+  }
+  #drop.over { transform: scale(1.01); }
+  #drop .icon {
+    width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center;
+    background: rgba(90,176,255,.12); color: var(--accent); margin-bottom: 4px;
+  }
+  #drop .icon svg { width: 28px; height: 28px; }
+  #drop strong { font-size: 18px; }
+  #drop .hint { color: var(--muted); font-size: 14px; }
   input[type=file] { display: none; }
-  .controls { display: flex; gap: 10px; flex-wrap: wrap; margin: 16px 0; }
+
+  /* buttons */
   button {
-    background: var(--accent); color: #0b1220; border: 0; border-radius: 8px;
-    padding: 8px 14px; font-weight: 600; cursor: pointer; font-size: 14px;
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    background: var(--accent); color: #07111f; border: 0; border-radius: 10px;
+    padding: 9px 16px; min-height: 40px; font: 600 14px/1 inherit; font-family: inherit;
+    cursor: pointer; touch-action: manipulation; transition: filter .15s, transform .05s;
   }
-  button.secondary { background: var(--line); color: var(--text); }
-  button:disabled { opacity: .4; cursor: default; }
+  button:hover { filter: brightness(1.1); }
+  button:active { transform: translateY(1px); }
+  button.secondary { background: var(--panel2); color: var(--text); border: 1px solid var(--line); }
+  button.copied { background: var(--ok); color: #07130c; border-color: transparent; }
+  button:disabled { opacity: .4; cursor: default; filter: none; }
+
+  .controls { display: flex; gap: 10px; flex-wrap: wrap; margin: 18px 0 0; }
+  .controls[hidden] { display: none; }
+
+  /* result cards */
   .file {
-    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-    margin-top: 14px; overflow: hidden;
+    background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius);
+    margin-top: 14px; overflow: hidden; box-shadow: 0 8px 24px rgba(0,0,0,.25);
   }
   .file header {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line); flex-wrap: wrap;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--panel2);
+    flex-wrap: wrap;
   }
+  .file .meta { min-width: 0; }
   .file .name { font-weight: 600; word-break: break-all; }
-  .tag { font-size: 12px; padding: 2px 8px; border-radius: 99px; margin-left: 8px; }
-  .tag.patch { background: #1f3a2a; color: var(--ok); }
-  .tag.report { background: #3a2f1a; color: var(--warn); }
+  .tag { font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 99px; margin-left: 8px; white-space: nowrap; }
+  .tag.patch { background: rgba(95,211,141,.12); color: var(--ok); }
+  .tag.report { background: rgba(255,184,77,.12); color: var(--warn); }
   .tag.unknown { background: var(--line); color: var(--muted); }
+  .actions { display: flex; gap: 8px; }
   pre {
-    margin: 0; padding: 12px 14px; max-height: 360px; overflow: auto;
-    font: 12.5px/1.45 ui-monospace, Consolas, Menlo, monospace; white-space: pre;
+    margin: 0; padding: 14px; max-height: 380px; overflow: auto;
+    font: 12.5px/1.5 ui-monospace, Consolas, Menlo, monospace; white-space: pre;
+    color: #cdd6e2; -webkit-overflow-scrolling: touch;
   }
-  .note { color: var(--muted); font-size: 13px; margin-top: 28px; }
-  footer { color: var(--muted); font-size: 12px; margin-top: 30px; }
-  .stats { display: flex; gap: 12px; flex-wrap: wrap; margin: 0 0 20px; }
-  .stat {
-    background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
-    padding: 8px 14px; font-size: 13px; color: var(--muted);
+
+  /* info + footer */
+  .info { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 30px; }
+  .info div {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+    padding: 14px; font-size: 13px; color: var(--muted);
   }
-  .stat b { color: var(--text); font-size: 16px; margin-right: 4px; }
+  .info b { display: block; color: var(--text); font-size: 14px; margin-bottom: 4px; }
+  footer {
+    display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+    color: var(--muted); font-size: 12px; margin-top: 30px; padding-top: 16px;
+    border-top: 1px solid var(--line);
+  }
+  footer a { color: var(--muted); }
+  footer a:hover { color: var(--text); }
+
+  .touch-only { display: none; }
+  @media (hover: none) and (pointer: coarse) {
+    .mouse-only { display: none; }
+    .touch-only { display: inline; }
+  }
+
+  /* phones */
+  @media (max-width: 600px) {
+    .mouse-only { display: none; }
+    .touch-only { display: inline; }
+    main { padding-top: 26px; padding-bottom: 32px; }
+    h1 { font-size: 26px; }
+    .sub { font-size: 14px; }
+    .stats { gap: 8px; }
+    .stat { flex: 1; justify-content: center; padding: 10px; }
+    .stat b { font-size: 17px; }
+    #drop { padding: 30px 16px; }
+    #drop .icon { width: 48px; height: 48px; }
+    .controls button { flex: 1; min-height: 46px; font-size: 15px; }
+    .file header > .meta { width: 100%; }
+    .tag { margin-left: 6px; }
+    .actions { width: 100%; }
+    .actions button { flex: 1; min-height: 44px; }
+    pre { font-size: 10.5px; padding: 12px; max-height: 55vh; }
+    .info { grid-template-columns: 1fr; gap: 8px; }
+  }
 </style>
 </head>
 <body>
 <main>
+  <div class="badge">&#9679; Runs 100% in your browser</div>
   <h1>IPS to Text Converter</h1>
-  <p class="sub">Turn <code>.ips</code> ROM patches or Apple crash reports into readable <code>.txt</code> files. Everything runs in your browser. Your files are never uploaded.</p>
+  <p class="sub">Turn <code>.ips</code> ROM patches and Apple crash reports into readable <code>.txt</code> files. Your files are never uploaded.</p>
 
   <div class="stats">
-    <div class="stat"><b id="filesCount">&ndash;</b> files converted</div>
-    <div class="stat"><b id="visitsCount">&ndash;</b> visits</div>
+    <div class="stat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M9 15l2 2 4-4"/></svg>
+      <span><b id="filesCount">&ndash;</b> files converted</span>
+    </div>
+    <div class="stat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>
+      <span><b id="visitsCount">&ndash;</b> visits</span>
+    </div>
   </div>
 
   <label id="drop" for="picker">
-    <strong>Drop .ips files here</strong>
-    <span>or click to choose files (you can pick more than one)</span>
+    <div class="icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5M12 3v12"/></svg></div>
+    <strong><span class="mouse-only">Drop .ips files here</span><span class="touch-only">Tap to choose .ips files</span></strong>
+    <span class="hint"><span class="mouse-only">or click to browse &middot; </span>you can pick more than one</span>
   </label>
-  <input id="picker" type="file" accept=".ips" multiple>
+  <input id="picker" type="file" multiple>
 
-  <div class="controls">
+  <div class="controls" hidden>
     <button id="dlAll" disabled>Download all .txt</button>
     <button id="clear" class="secondary" disabled>Clear</button>
   </div>
 
   <div id="results"></div>
 
-  <p class="note">
-    <strong>ROM patches</strong> show every record: the ROM offset, the size, and the bytes written (hex + ASCII). RLE records show the fill value and count.
-    <strong>Apple crash reports</strong> are pretty-printed as JSON.
-    Tip: you can paste the output into a local AI (LM Studio, etc.) and ask it to explain the changes.
-  </p>
-  <footer>IPS to Text Converter v<span id="ver"></span></footer>
+  <section class="info">
+    <div><b>ROM patches</b>Every record: ROM offset, size, and bytes written (hex + ASCII). RLE fills included.</div>
+    <div><b>Crash reports</b>Apple <code>.ips</code> crash logs, pretty-printed so they're easy to read.</div>
+    <div><b>Ask an AI</b>Tap <strong>Copy text</strong> and paste into ChatGPT, Claude or LM Studio to explain the changes.</div>
+  </section>
+
+  <footer>
+    <span>IPS to Text Converter v<span id="ver"></span></span>
+    <a href="https://github.com/Zephino/Ips_to_Text" target="_blank" rel="noopener">View on GitHub</a>
+  </footer>
 </main>
 
 <script>
 "use strict";
-const VERSION = "1.1.0";
+const VERSION = "1.2.0";
 
 /* ---------- usage counter ----------
    Only an anonymous +1 is sent. File names and contents are never sent. */
@@ -208,11 +315,31 @@ function download(name, text) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
+async function copyText(text, btn) {
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; }
+  catch {
+    // fallback for older phone browsers
+    const ta = document.createElement("textarea");
+    ta.value = text; ta.setAttribute("readonly", "");
+    ta.style.position = "fixed"; ta.style.opacity = "0";
+    document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand("copy"); } catch { ok = false; }
+    ta.remove();
+  }
+  const old = btn.textContent;
+  btn.textContent = ok ? "Copied!" : "Copy failed";
+  btn.classList.toggle("copied", ok);
+  setTimeout(() => { btn.textContent = old; btn.classList.remove("copied"); }, 1500);
+}
+
 function refreshButtons() {
+  document.querySelector(".controls").hidden = outputs.length === 0;
   dlAll.disabled = clearBtn.disabled = outputs.length === 0;
 }
 
-async function handleFiles(files) {
+async function handleFiles(fileList) {
+  const files = Array.from(fileList); // copy before the input is reset
   for (const file of files) {
     const raw = new Uint8Array(await file.arrayBuffer());
     const { kind, text } = convert(raw);
@@ -223,21 +350,29 @@ async function handleFiles(files) {
     box.className = "file";
     const header = document.createElement("header");
     const left = document.createElement("div");
+    left.className = "meta";
     const nm = document.createElement("span");
     nm.className = "name"; nm.textContent = file.name;           // textContent: no HTML injection
     const tag = document.createElement("span");
     tag.className = "tag " + kind;
     tag.textContent = kind === "patch" ? "ROM patch" : kind === "report" ? "Crash report" : "Unknown / text";
     left.append(nm, tag);
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const copyBtn = document.createElement("button");
+    copyBtn.className = "secondary";
+    copyBtn.textContent = "Copy text";
+    copyBtn.onclick = () => copyText(text, copyBtn);
     const btn = document.createElement("button");
     btn.textContent = "Download .txt";
     btn.onclick = () => download(outName, text);
-    header.append(left, btn);
+    actions.append(copyBtn, btn);
+    header.append(left, actions);
     const pre = document.createElement("pre");
     pre.textContent = text.length > 200000 ? text.slice(0, 200000) + "\n... (preview cut off; download for full text)" : text;
     box.append(header, pre);
     results.appendChild(box);
-    await counter("hit", KEY_FILES, "filesCount");
+    counter("hit", KEY_FILES, "filesCount"); // don't wait on the counter
   }
   refreshButtons();
 }
